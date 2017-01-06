@@ -51,12 +51,19 @@ class FrameProcessor:
 				cont = c
 		self.hand_contour = cv2.approxPolyDP(cont, 0.001*cv2.arcLength(cont, True), True)
 
+
 	def get_hand_dims(self):
 		self.hand_x, self.hand_y, self,hand_width, self.hand_height = cv2.boundingRect(self.hand_contour)
 
 
+
+
 	def get_hulls(self):
 		self.hull_contour = cv2.convexHull(self.hand_contour, returnPoints=False)
+		self.hull_points = [self.hand_contour[i[0]] for i in self.hull_contour]
+		self.hull_points = np.array(self.hull_points, dtype=np.int32)
+
 
 	def get_defects(self):
-		pass
+		self.defects = cv2.convexityDefects(self.handContour, self.hullHandContour) 
+
