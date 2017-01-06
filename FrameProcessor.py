@@ -2,6 +2,8 @@ import sys
 import numpy as np
 import cv2
 
+from collection import deque
+
 
 class FrameProcessor:
 
@@ -11,7 +13,7 @@ class FrameProcessor:
 			raise Exception("Can't access web-camera")
 		self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1000)
 		self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 600)
-
+		self.hand_centers = deque(maxlen=100)
 
 	def get_next_frame(self):
 		_, self.frame = self.cap.read()
@@ -67,3 +69,9 @@ class FrameProcessor:
 	def get_defects(self):
 		self.defects = cv2.convexityDefects(self.handContour, self.hullHandContour) 
 
+
+	def get_center(self):
+		moments = cv2.moments(self.hand_contour)
+		mom_x = int(moments['m10'] / moments['m00'])
+		mom_y = int(moments['m01'] / moments['m00'])
+		self.hand_centers.append((mom_x, mom_y))
