@@ -6,7 +6,7 @@ import cv2
 from collections import deque
 
 
-MIN_CONVEX_HULL_LENGTH = 200
+MIN_CONVEX_HULL_LENGTH = 100
 
 class FrameProcessor:
 
@@ -74,11 +74,11 @@ class FrameProcessor:
 		number_of_defects = 0
 		for defect in self.defects:
 			start, end, farthest_index, distance = defect[0]
+			distance = distance / 256 # distance contains 8 fractional bits, gotta get rid of them
 			if distance >= MIN_CONVEX_HULL_LENGTH:
 				number_of_defects += 1
 		self.fingers.append(number_of_defects)
 		print("defects")
-		print(self.defects)
 		print(self.fingers)
 
 
