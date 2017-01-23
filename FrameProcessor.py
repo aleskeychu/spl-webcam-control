@@ -5,10 +5,24 @@ import cv2
 import argparse
 import math
 
-from collections import deque
+from collections import deque, namedtuple
 
 pag.FAILSAFE = False
 MIN_CONVEX_HULL_LENGTH = 100
+
+
+class ROI:
+
+	def __init__(self, x=0, y=0, height=10, width=10, thickness=2, color=(0, 255, 0)):
+		self.x = x
+		self.y = y
+		self.width = width
+		self.height = height
+		self.thickness = thickness
+		self.color = color
+
+	def draw(self, array):
+		cv2.rectangle(array, (self.x, self.y), (self.x+self.width, self.y + self.height), self.color, self.thickness)
 
 class FrameProcessor:
 
@@ -17,16 +31,45 @@ class FrameProcessor:
 		self.cap = cv2.VideoCapture(0)
 		if not self.cap.isOpened():
 			raise Exception("Can't access web-camera")
-		self.screen_size = pag.size()
+		Size = namedtuple('Size', 'width height')
+		self.screen_size = Size(*pag.size())
 		self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, self.screen_size[1])
 		self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, self.screen_size[0])
 		self.hand_centers = deque(maxlen=15) # collectionq for storing last 100 hand positions, tuples of format (x, y)
 		self.fingers = deque(maxlen=10) # collection for storing very approximate number of fingers
-		self.recent_click = False # trace whether clicks were made recently
+		self.recent_click = False # trace whether clicks were made recently	
+		self._positions = ((0.3, 0.4), (0.4, 0.35), (0.4, 0.45), (0.5, 0.35), (0.5, 0.45), (0.6, 0.30), (0.6, 0.4), (0.6, 0.50))
+		self.rois = None
+		
 
 	def get_next_frame(self):
 		_, self.frame = self.cap.read()
 		self.frame = cv2.flip(self.frame, 1)
+
+
+	def get_color_samples(self):
+		fr = self.frame.copy()
+		if not self.rois:
+			self.rois = [ROI(int(fr.shape[1] * i[1]), int(fr.shape[0]* i[0])) for i in self._positions]
+		for roi in self.rois:
+			roi.draw(fr)
+		cv2.imshow('lol', fr)
+		if cv2.waitKey(1) & 0xFF == ord('d'):
+			hsv = cv2.cvtColor(fr, cv2.COLOR_BGR2HSV)
+			colors = []
+			for roi in self.rois:
+				colors.append(hsv[roi.y + roi.height // 2][roi.x + roi.width // 2]) # getting colors in boxes
+			self.calc_median(colors)
+
+
+	def calc_median(self, colors):
+		length = len(colors)
+		h = sum(el[0] for el in colors) // length
+		s = sum(el[1] for el in colors) // length
+		v = sum(el[2] for el in colors) // length
+		self.median_hsv = (h, s, v)
+		print(self.median_hsv)
+		sys.exit(0)
 
 	# another method for thresholding
 	# couldn't properly implement, commented for later fixes
@@ -134,6 +177,7 @@ if __name__ == "__main__":
 	fp = FrameProcessor()
 	while True:
 		fp.run()
+		fp.get_color_samples()
 		if args.show_video:
 			img = np.zeros(fp.frame.shape)
 			cv2.drawContours(img, fp.hand_contour, -1, (0, 255, 0), 3)
