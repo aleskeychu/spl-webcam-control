@@ -18,7 +18,7 @@ class FrameProcessor:
 		self.screen_size = pag.size()
 		self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, self.screen_size[0])
 		self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, self.screen_size[1])
-		self.hand_centers = deque(maxlen=15) # collection for storing last 100 hand positions, tuples of format (x, y)
+		self.hand_centers = deque(maxlen=15) # collectionq for storing last 100 hand positions, tuples of format (x, y)
 		self.fingers = deque(maxlen=15) # collection for storing very approximate number of fingers
 		self.recent_click = False # trace whether clicks were made recently
 
@@ -64,7 +64,7 @@ class FrameProcessor:
 		self.hand_x, self.hand_y, self,hand_width, self.hand_height = cv2.boundingRect(self.hand_contour)
 
 
-	def get_hulls(self):
+	def get_hulls(seqlf):
 		self.hull_contour = cv2.convexHull(self.hand_contour, returnPoints=False)
 		self.hull_points = [self.hand_contour[i[0]] for i in self.hull_contour]
 		self.hull_points = np.array(self.hull_points, dtype=np.int32)
@@ -79,8 +79,6 @@ class FrameProcessor:
 			if distance >= MIN_CONVEX_HULL_LENGTH:
 				number_of_defects += 1
 		self.fingers.append(number_of_defects)
-		print("defects")
-		print(self.fingers)
 
 
 	def get_center(self):
@@ -89,13 +87,14 @@ class FrameProcessor:
 		mom_y = int(moments['m01'] / moments['m00'])
 		self.hand_centers.append((mom_x, mom_y))
 
+
 	def move(self):
 		if len(self.hand_centers) < 2:
 			return
 		dots = self.hand_centers
-		delta = (dots[-1][0] - dots[-2][0], dots[-1][1] - dots[-2][1])
-		print("delta = {}".format(delta)) 
+		delta = ((dots[-1][0] - dots[-2][0]) * 2, (dots[-1][1] - dots[-2][1]) * 2)
 		pag.moveRel(*delta)
+
 
 	def register_click(self):
 		delta = self.fingers[-1] - self.fingers[0]
