@@ -28,6 +28,7 @@ class FrameProcessor:
 		_, self.frame = self.cap.read()
 		self.frame = cv2.flip(self.frame, 1)
 
+	# another method for thresholding
 	# couldn't properly implement, commented for later fixes
 	# def erose_and_dilate(self):
 	# 	self.hsv = cv2.cvtColor(self.frame, cv2.COLOR_BGR2HSV)
@@ -69,7 +70,7 @@ class FrameProcessor:
 	def get_hulls(self):
 		self.hull_contour = cv2.convexHull(self.hand_contour, returnPoints=False) # returns indeces
 		self.hull_points = [self.hand_contour[i[0]] for i in self.hull_contour] # actual points
-		self.hull_points = np.array(self.hull_points, dtype=np.int32)
+		self.hull_points = np.array(self.hull_points, dtype=np.int16)
 
 
 	def get_defects(self):
@@ -102,11 +103,11 @@ class FrameProcessor:
 	def register_click(self):
 		delta = self.fingers[-1] - self.fingers[0]
 		# print(delta)
-		if delta < -3 and not self.recent_click: # 3 is an arbitrary number of fingers found empiricaly
+		if delta <= -3 and not self.recent_click: # 3 is an arbitrary, empiricaly found number of fingers
 			self.recent_click = True
 			pag.click()
 			# print('click Done')
-		elif delta > 3 and self.recent_click:
+		elif delta >= 3 and self.recent_click:
 			# print('click Undone')
 			self.recent_click = False
 
@@ -134,12 +135,11 @@ if __name__ == "__main__":
 	while True:
 		fp.run()
 		if args.show_video:
-			img = np.zeros((fp.frame.shape[0], fp.frame.shape[1] * 2), np.uint8)
+			img = np.zeros(fp.frame.shape)
 			cv2.drawContours(img, fp.hand_contour, -1, (0, 255, 0), 3)
 			cv2.circle(img, fp.hand_centers[-1], 10, (255, 0, 0))
-			roi = img[:,fp.frame.shape[1]:]
-			img[:,fp.frame.shape[1]:] = fp.threshold
-			cv2.imshow('frame', img)
+			cv2.imshow('contours', img)
+			cv2.imshow('threshold', fp.threshold)
 		if cv2.waitKey(1) & 0xFF == ord('q'):
 			break
 	cv2.destroyAllWindows()
