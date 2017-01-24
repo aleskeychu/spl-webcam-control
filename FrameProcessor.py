@@ -9,7 +9,7 @@ from collections import deque, namedtuple
 
 pag.FAILSAFE = False
 MIN_CONVEX_HULL_LENGTH = 100
-
+SAMPLES = 5
 
 class ROI:
 
@@ -38,8 +38,9 @@ class FrameProcessor:
 		self.hand_centers = deque(maxlen=15) # collectionq for storing last 100 hand positions, tuples of format (x, y)
 		self.fingers = deque(maxlen=10) # collection for storing very approximate number of fingers
 		self.recent_click = False # trace whether clicks were made recently	
-		self._positions = ((0.3, 0.4), (0.4, 0.35), (0.4, 0.45), (0.5, 0.35), (0.5, 0.45), (0.6, 0.30), (0.6, 0.4), (0.6, 0.50))
+		self._positions = ((0.3, 0.4), (0.4, 0.35), (0.4, 0.45), (0.5, 0.35), (0.5, 0.45), (0.6, 0.30), (0.6, 0.4), (0.6, 0.50)) # positions to draw boxes at
 		self.rois = None
+		self.samples = [] # color samples from each roi
 		
 
 	def get_next_frame(self):
@@ -48,29 +49,34 @@ class FrameProcessor:
 
 
 	def get_color_samples(self):
-		fr = self.frame.copy()
-		if not self.rois:
-			self.rois = [ROI(int(fr.shape[1] * i[1]), int(fr.shape[0]* i[0])) for i in self._positions]
-		for roi in self.rois:
-			roi.draw(fr)
-		cv2.imshow('lol', fr)
-		if cv2.waitKey(1) & 0xFF == ord('d'):
-			hsv = cv2.cvtColor(fr, cv2.COLOR_BGR2HSV)
-			colors = []
+		while True:	
+			self.get_next_frame()
+			fr = self.frame.copy()
+			if not self.rois:
+				self.rois = [ROI(int(fr.shape[1] * i[1]), int(fr.shape[0]* i[0])) for i in self._positions]
 			for roi in self.rois:
-				colors.append(hsv[roi.y + roi.height // 2][roi.x + roi.width // 2]) # getting colors in boxes
-			self.calc_median(colors)
-
+				roi.draw(fr)
+			cv2.imshow('lol', fr)
+			if cv2.waitKey(1) & 0xFF == ord('d'):
+				for i in range(SAMPLES):
+					hsv = cv2.cvtColor(fr, cv2.COLOR_BGR2HSV)
+					colors = []
+					for roi in self.rois:
+						colors.append(hsv[roi.y + roi.height // 2][roi.x + roi.width // 2]) # getting colors in boxes
+					self.samples.append(self.calc_median(colors))
+				break	
+				
 
 	def calc_median(self, colors):
 		length = len(colors)
 		h = sum(el[0] for el in colors) // length
 		s = sum(el[1] for el in colors) // length
 		v = sum(el[2] for el in colors) // length
-		self.median_hsv = (h, s, v)
-		print(self.median_hsv)
-		sys.exit(0)
+		return (h, s, v)
 
+
+	def get_bounds(self):
+		pass
 	# another method for thresholding
 	# couldn't properly implement, commented for later fixes
 	# def erose_and_dilate(self):
@@ -176,7 +182,6 @@ if __name__ == "__main__":
 
 	fp = FrameProcessor()
 	while True:
-		fp.run()
 		fp.get_color_samples()
 		if args.show_video:
 			img = np.zeros(fp.frame.shape)
