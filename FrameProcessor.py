@@ -58,25 +58,35 @@ class FrameProcessor:
 				roi.draw(fr)
 			cv2.imshow('lol', fr)
 			if cv2.waitKey(1) & 0xFF == ord('d'):
-				for i in range(SAMPLES):
-					hsv = cv2.cvtColor(fr, cv2.COLOR_BGR2HSV)
-					colors = []
-					for roi in self.rois:
-						colors.append(hsv[roi.y + roi.height // 2][roi.x + roi.width // 2]) # getting colors in boxes
-					self.samples.append(self.calc_median(colors))
+				hsv = cv2.cvtColor(fr, cv2.COLOR_BGR2HSV)
+				colors = []
+				for roi in self.rois:
+					h, s, v = [[] for i in range(3)]
+					subroi = roi[roi.x+roi.thickness : roi.x+roi.width-roi.thickness, roi.y+roi.thickness : roi.y+roi.height-roi.thickness] # area inside box
+					for row in subroi:
+						for pixel in row:
+							h.append(pixel[0])
+							s.append(pixel[1])
+							v.append(pixel[2])
+					h.sort()
+					s.sort()
+					v.sort()
+					l = len(h)
+					self.samples.append(h[l // 2], s[l // 2], v[l // 2])	
 				break	
 				
-
-	def calc_median(self, colors):
-		length = len(colors)
-		h = sum(el[0] for el in colors) // length
-		s = sum(el[1] for el in colors) // length
-		v = sum(el[2] for el in colors) // length
-		return (h, s, v)
+	# Deprecated.
+	# def calc_median(self, colors):
+	# 	length = len(colors)
+	# 	h = sum(el[0] for el in colors) // length
+	# 	s = sum(el[1] for el in colors) // length
+	# 	v = sum(el[2] for el in colors) // length
+	# 	return (h, s, v)
 
 
 	def get_bounds(self):
-		pass
+		for i in range(SAMPLES):
+
 	# another method for thresholding
 	# couldn't properly implement, commented for later fixes
 	# def erose_and_dilate(self):
