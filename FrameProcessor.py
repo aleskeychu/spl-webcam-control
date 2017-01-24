@@ -10,6 +10,7 @@ from collections import deque, namedtuple
 pag.FAILSAFE = False
 MIN_CONVEX_HULL_LENGTH = 100
 SAMPLES = 5
+HSV = namedtuple("HSV", "h, s, v")
 
 class ROI:
 
@@ -49,11 +50,12 @@ class FrameProcessor:
 
 
 	def get_color_samples(self):
+		
 		while True:	
 			self.get_next_frame()
 			fr = self.frame.copy()
 			if not self.rois:
-				self.rois = [ROI(int(fr.shape[1] * i[1]), int(fr.shape[0]* i[0])) for i in self._positions]
+				self.rois = [ROI(int(fr.shape[1] * i[1]), int(fr.shape[0]* i[0])) for i in self._positions] # initiliaze boxes from which to get color sampels
 			for roi in self.rois:
 				roi.draw(fr)
 			cv2.imshow('lol', fr)
@@ -72,7 +74,7 @@ class FrameProcessor:
 					s.sort()
 					v.sort()
 					l = len(h)
-					self.samples.append(h[l // 2], s[l // 2], v[l // 2])	
+					self.samples.append(HSV(h[l // 2], s[l // 2], v[l // 2])) # array of tuples of median values
 				break	
 				
 	# Deprecated.
@@ -85,7 +87,15 @@ class FrameProcessor:
 
 
 	def get_bounds(self):
-		for i in range(SAMPLES):
+		Bound = namedtuple("Bound", "bot top")
+		self.bounds = []
+		for sample in self.samples:
+			h_bound = Bound(14 if sample.h - 14 >= 0 else sample.h, 10 if sample.h + 10 <= 255 else 255 - sample.h)
+			s_bound = Bound(30 if sample.s - 30 >= 0 else sample.s, 30 if sample.s + 30 <= 255 else 255 - sample.s)
+			v_bound = Bound(70 if sample.v - 70 >= 0 else sample.v, 70 if sample.v + 70 <= 255 else 255 - sample.v)
+			b = [h_bound, s_bound, v_bound]
+			self.bounds.append(b)
+	
 
 	# another method for thresholding
 	# couldn't properly implement, commented for later fixes
