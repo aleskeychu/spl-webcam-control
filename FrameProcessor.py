@@ -5,12 +5,13 @@ import cv2
 import argparse
 import math
 
+from functools import reduce
 from collections import deque, namedtuple
 
 pag.FAILSAFE = False
 MIN_CONVEX_HULL_LENGTH = 100
 SAMPLES = 5
-HSV = namedtuple("HSV", "h, s, v")
+HLS = namedtuple("HLS", "h, l, s")
 
 class ROI:
 
@@ -25,8 +26,8 @@ class ROI:
 	def draw(self, array):
 		cv2.rectangle(array, (self.x, self.y), (self.x+self.width, self.y + self.height), self.color, self.thickness)
 
-class FrameProcessor:
 
+class FrameProcessor:
 
 	def __init__(self):
 		self.cap = cv2.VideoCapture(0)
@@ -49,8 +50,7 @@ class FrameProcessor:
 		self.frame = cv2.flip(self.frame, 1)
 
 
-	def get_color_samples(self):
-		
+	def get_color_samples(self):		
 		while True:	
 			self.get_next_frame()
 			fr = self.frame.copy()
@@ -60,21 +60,21 @@ class FrameProcessor:
 				roi.draw(fr)
 			cv2.imshow('lol', fr)
 			if cv2.waitKey(1) & 0xFF == ord('d'):
-				hsv = cv2.cvtColor(fr, cv2.COLOR_BGR2HSV)
+				hsv = cv2.cvtColor(fr, cv2.COLOR_BGR2HLS)
 				colors = []
 				for roi in self.rois:
-					h, s, v = [[] for i in range(3)]
-					subroi = roi[roi.x+roi.thickness : roi.x+roi.width-roi.thickness, roi.y+roi.thickness : roi.y+roi.height-roi.thickness] # area inside box
+					h, l, s = [[] for i in range(3)]
+					subroi = fr[roi.x+roi.thickness : roi.x+roi.width-roi.thickness, roi.y+roi.thickness : roi.y+roi.height-roi.thickness] # area inside box
 					for row in subroi:
 						for pixel in row:
 							h.append(pixel[0])
-							s.append(pixel[1])
-							v.append(pixel[2])
+							l.append(pixel[1])
+							s.append(pixel[2])
 					h.sort()
+					l.sort()
 					s.sort()
-					v.sort()
-					l = len(h)
-					self.samples.append(HSV(h[l // 2], s[l // 2], v[l // 2])) # array of tuples of median values
+					length = len(h)
+					self.samples.append(HLS(h[length // 2], l[length // 2], s[length // 2])) # array of tuples of median values
 				break	
 				
 	# Deprecated.
@@ -90,12 +90,24 @@ class FrameProcessor:
 		Bound = namedtuple("Bound", "bot top")
 		self.bounds = []
 		for sample in self.samples:
-			h_bound = Bound(14 if sample.h - 14 >= 0 else sample.h, 10 if sample.h + 10 <= 255 else 255 - sample.h)
-			s_bound = Bound(30 if sample.s - 30 >= 0 else sample.s, 30 if sample.s + 30 <= 255 else 255 - sample.s)
-			v_bound = Bound(70 if sample.v - 70 >= 0 else sample.v, 70 if sample.v + 70 <= 255 else 255 - sample.v)
-			b = [h_bound, s_bound, v_bound]
-			self.bounds.append(b)
-	
+			h = Bound(14 if sample.h - 14 >= 0 else sample.h, 10 if sample.h + 10 <= 255 else 255 - sample.h)
+			l = Bound(30 if sample.l - 30 >= 0 else sample.l, 30 if sample.l + 30 <= 255 else 255 - sample.l)
+			s = Bound(70 if sample.s - 70 >= 0 else sample.s, 70 if sample.s + 70 <= 255 else 255 - sample.s)
+			lower = np.array([sample.h - h.bot, sample.l - l.bot, sample.s - s.bot])
+			upper = np.array([sample.h + h.top, sample.l + l.top, sample.s + s.top])
+			self.bounds.append((lower, upper))
+
+
+	def get_threshold_hsv(self):
+		hls = cv2.cvtColor(self.frame, cv2.COLOR_BGR2HLS)
+		thresholded_frames = []
+		for bound in self.bounds:
+			print("bound = {}".format(bound))
+			fr = cv2.inRange(hls, bound[0], bound[1])
+			thresholded_frames.append(fr)
+		self.thr = reduce(np.bitwise_or, thresholded_frames)
+		self.threshold_from_hls = cv2.medianBlur(self.thr, 7)
+
 
 	# another method for thresholding
 	# couldn't properly implement, commented for later fixes
@@ -203,6 +215,14 @@ if __name__ == "__main__":
 	fp = FrameProcessor()
 	while True:
 		fp.get_color_samples()
+		fp.get_bounds()
+		cv2.destroyAllWindows()
+		while True:
+			fp.get_next_frame()
+			fp.get_threshold_hsv()
+			cv2.imshow('thr2', fp.thr)
+			cv2.imshow('thr', fp.threshold_from_hls)
+			cv2.waitKey(1)
 		if args.show_video:
 			img = np.zeros(fp.frame.shape)
 			cv2.drawContours(img, fp.hand_contour, -1, (0, 255, 0), 3)
