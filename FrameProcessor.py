@@ -12,6 +12,7 @@ pag.FAILSAFE = False
 MIN_CONVEX_HULL_LENGTH = 100
 SAMPLES = 5
 HLS = namedtuple("HLS", "h, l, s")
+bounds = HLS(30, 30, 40)
 
 class ROI:
 
@@ -60,11 +61,11 @@ class FrameProcessor:
 				roi.draw(fr)
 			cv2.imshow('lol', fr)
 			if cv2.waitKey(1) & 0xFF == ord('d'):
-				hsv = cv2.cvtColor(fr, cv2.COLOR_BGR2HLS)
+				hls = cv2.cvtColor(fr, cv2.COLOR_BGR2HLS)
 				colors = []
 				for roi in self.rois:
 					h, l, s = [[] for i in range(3)]
-					subroi = fr[roi.x+roi.thickness : roi.x+roi.width-roi.thickness, roi.y+roi.thickness : roi.y+roi.height-roi.thickness] # area inside box
+					subroi = hls[roi.x+roi.thickness : roi.x+roi.width-roi.thickness, roi.y+roi.thickness : roi.y+roi.height-roi.thickness] # area inside box
 					for row in subroi:
 						for pixel in row:
 							h.append(pixel[0])
@@ -90,9 +91,9 @@ class FrameProcessor:
 		Bound = namedtuple("Bound", "bot top")
 		self.bounds = []
 		for sample in self.samples:
-			h = Bound(14 if sample.h - 14 >= 0 else sample.h, 10 if sample.h + 10 <= 255 else 255 - sample.h)
-			l = Bound(30 if sample.l - 30 >= 0 else sample.l, 30 if sample.l + 30 <= 255 else 255 - sample.l)
-			s = Bound(70 if sample.s - 70 >= 0 else sample.s, 70 if sample.s + 70 <= 255 else 255 - sample.s)
+			h = Bound(bounds.h if sample.h - bounds.h >= 0 else sample.h, bounds.h if sample.h + bounds.h <= 255 else 255 - sample.h)
+			l = Bound(bounds.l if sample.l - bounds.l >= 0 else sample.l, bounds.l if sample.l + bounds.l <= 255 else 255 - sample.l)
+			s = Bound(bounds.s if sample.s - bounds.s >= 0 else sample.s, bounds.s if sample.s + bounds.s <= 255 else 255 - sample.s)
 			lower = np.array([sample.h - h.bot, sample.l - l.bot, sample.s - s.bot])
 			upper = np.array([sample.h + h.top, sample.l + l.top, sample.s + s.top])
 			self.bounds.append((lower, upper))
@@ -109,22 +110,11 @@ class FrameProcessor:
 		self.threshold_from_hls = cv2.medianBlur(self.thr, 7)
 
 
-	# another method for thresholding
-	# couldn't properly implement, commented for later fixes
-	# def erose_and_dilate(self):
-	# 	self.hsv = cv2.cvtColor(self.frame, cv2.COLOR_BGR2HSV)
-	# 	mask = cv2.inRange(hsv, np.array([2, 50, 50]), np.array([15, 255, 255]))
-
-	# 	dilation = cv2.dilate(mask2, kernel_ellipse, iterations=1)
-	# 	erosion = cv2.erode(dilation, kernel_square, iterations=1)    
-	# 	dilation2 = cv2.dilate(erosion, kernel_ellipse, iterations=1)    
-	# 	filtered = cv2.medianBlur(dilation2, 5)
-	# 	kernel_ellipse = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (8, 8))
-	# 	dilation2 = cv2.dilate(filtered, kernel_ellipse,iterations=1)
-	# 	kernel_ellipse= cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5, 5))
-	# 	dilation3 = cv2.dilate(filtered,kernel_ellipse, iterations=1)
-	# 	median = cv2.medianBlur(dilation2, 5)
-	# 	_, self.threshold2 = cv2.threshold(median, 127, 255, 0)
+	def erode_and_dilate(self):
+		mask2 = self.threshold_from_hls
+		kernel_ellipse = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (8, 8))
+		dilation = cv2.dilate(mask2, kernel_ellipse)
+		self.median = cv2.erode(dilation, kernel_ellipse)    
 
 	
 	def get_threshold(self):
@@ -133,8 +123,8 @@ class FrameProcessor:
 		_, self.threshold = cv2.threshold(blurred, 0, 255, cv2.THRESH_BINARY+cv2.THRESH_OTSU)
 
 	# Work on the assumption that the hand is closer to the camera and so it occupies the biggest area of the screen.
-	def get_hand_contour(self):
-		_, self.contours, __ = cv2.findContours(self.threshold.copy(), cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
+	def get_hand_contour(self, thr):
+		_, self.contours, __ = cv2.findContours(thr.copy(), cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
 		maxArea, cont = 0, None
 		for c in self.contours:
 			area = cv2.contourArea(c)
@@ -220,8 +210,10 @@ if __name__ == "__main__":
 		while True:
 			fp.get_next_frame()
 			fp.get_threshold_hsv()
+			fp.erode_and_dilate()
 			cv2.imshow('thr2', fp.thr)
 			cv2.imshow('thr', fp.threshold_from_hls)
+			cv2.imshow('ead', fp.median)
 			cv2.waitKey(1)
 		if args.show_video:
 			img = np.zeros(fp.frame.shape)
