@@ -12,7 +12,8 @@ pag.FAILSAFE = False
 MIN_CONVEX_HULL_LENGTH = 100
 SAMPLES = 5
 HLS = namedtuple("HLS", "h, l, s")
-bounds = HLS(30, 30, 40)
+bounds = HLS(30, 30, 60)
+POINT = namedtuple("POINT", "x, y")
 
 class ROI:
 
@@ -107,15 +108,26 @@ class FrameProcessor:
 			fr = cv2.inRange(hls, bound[0], bound[1])
 			thresholded_frames.append(fr)
 		self.thr = reduce(np.bitwise_or, thresholded_frames)
-		self.threshold_from_hls = cv2.medianBlur(self.thr, 7)
+		self.threshold_from_hls = cv2.medianBlur(self.thr, 9)
 
 
 	def erode_and_dilate(self):
 		mask2 = self.threshold_from_hls
-		kernel_ellipse = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (8, 8))
-		dilation = cv2.dilate(mask2, kernel_ellipse)
-		self.median = cv2.erode(dilation, kernel_ellipse)    
+		# kernel_ellipse = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (8, 8))
+		# dilation = cv2.dilate(mask2, kernel_ellipse)
+		# self.median = cv2.erode(dilation, kernel_ellipse)    
 
+		kernel_square = np.ones((11,11),np.uint8)
+		kernel_ellipse= cv2.getStructuringElement(cv2.MORPH_ELLIPSE,(5,5))
+		dilation = cv2.dilate(mask2,kernel_ellipse)
+		erosion = cv2.erode(dilation,kernel_square)    
+		dilation2 = cv2.dilate(erosion,kernel_ellipse)    
+		filtered = cv2.medianBlur(dilation2,5)
+		kernel_ellipse= cv2.getStructuringElement(cv2.MORPH_ELLIPSE,(8,8))
+		dilation2 = cv2.dilate(filtered,kernel_ellipse)
+		kernel_ellipse= cv2.getStructuringElement(cv2.MORPH_ELLIPSE,(5,5))
+		dilation3 = cv2.dilate(filtered,kernel_ellipse)
+		self.median = cv2.medianBlur(dilation2,5)
 	
 	def get_threshold(self):
 		gray = cv2.cvtColor(self.frame, cv2.COLOR_BGR2GRAY)
@@ -143,6 +155,17 @@ class FrameProcessor:
 		self.hull_points = [self.hand_contour[i[0]] for i in self.hull_contour] # actual points
 		self.hull_points = np.array(self.hull_points, dtype=np.int16)
 
+	@static_method
+	def find_angle(a, b, c):
+		ab = POINT(b.x - a.x, b.y - a.y)
+		cb = POINT(b.x - c.x, b.y - c.y)
+		dotprod = ab.x * cb.x + ab.y * cb.y
+		mod_ab = ab.x ** 2 + ab.y ** 2
+		mod_cb = cb.x ** 2 + cb.y ** 2
+		cos = dotprod / math.sqrt(mod_ab * mod_cb)
+		acos = math.acos(cos)
+		degrees = acos / math.pi * 180
+		return degrees
 
 	def get_defects(self):
 		self.defects = cv2.convexityDefects(self.hand_contour, self.hull_contour) 
@@ -211,9 +234,11 @@ if __name__ == "__main__":
 			fp.get_next_frame()
 			fp.get_threshold_hsv()
 			fp.erode_and_dilate()
-			cv2.imshow('thr2', fp.thr)
-			cv2.imshow('thr', fp.threshold_from_hls)
+			fp.get_hand_contour(fp.median)
+			fp.get_hulls()
+			cv2.drawContours(fp.frame, fp.hand_contour, -1, (0, 255, 0), 3)
 			cv2.imshow('ead', fp.median)
+			cv2.imshow('fr', fp.frame)
 			cv2.waitKey(1)
 		if args.show_video:
 			img = np.zeros(fp.frame.shape)
