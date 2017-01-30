@@ -10,10 +10,11 @@ from collections import deque, namedtuple
 
 pag.FAILSAFE = False
 MIN_CONVEX_HULL_LENGTH = 100
+MAX_ANGLE = 90
 SAMPLES = 5
 HLS = namedtuple("HLS", "h, l, s")
-bounds = HLS(30, 30, 60)
-POINT = namedtuple("POINT", "x, y")
+bounds = HLS(10, 30, 60)
+Point = namedtuple("Point", "x, y")
 
 class ROI:
 
@@ -155,10 +156,10 @@ class FrameProcessor:
 		self.hull_points = [self.hand_contour[i[0]] for i in self.hull_contour] # actual points
 		self.hull_points = np.array(self.hull_points, dtype=np.int16)
 
-	@static_method
-	def find_angle(a, b, c):
-		ab = POINT(b.x - a.x, b.y - a.y)
-		cb = POINT(b.x - c.x, b.y - c.y)
+	@staticmethod
+	def angle(a, b, c):
+		ab = Point(b.x - a.x, b.y - a.y)
+		cb = Point(b.x - c.x, b.y - c.y)
 		dotprod = ab.x * cb.x + ab.y * cb.y
 		mod_ab = ab.x ** 2 + ab.y ** 2
 		mod_cb = cb.x ** 2 + cb.y ** 2
@@ -168,14 +169,20 @@ class FrameProcessor:
 		return degrees
 
 	def get_defects(self):
-		self.defects = cv2.convexityDefects(self.hand_contour, self.hull_contour) 
-		number_of_defects = 0
-		for defect in self.defects:
+		defects = cv2.convexityDefects(self.hand_contour, self.hull_contour) 
+		self.defects = []
+		for defect in defects:
 			start, end, farthest_index, distance = defect[0]
 			distance = distance / 256 # distance contains 8 fractional bits, gotta get rid of them
-			if distance >= MIN_CONVEX_HULL_LENGTH:
-				number_of_defects += 1
-		self.fingers.append(number_of_defects)
+			if distance < MIN_CONVEX_HULL_LENGTH:
+				continue
+			a = Point(self.hand_contour[start][0][0], self.hand_contour[start][0][1])
+			b = Point(self.hand_contour[farthest_index][0][0], self.hand_contour[farthest_index][0][1])
+			c = Point(self.hand_contour[end][0][0], self.hand_contour[end][0][1])
+			if FrameProcessor.angle(a, b, c) > MAX_ANGLE:
+				continue
+			self.defects.append(defect)
+		self.number_of_fingers = len(self.defects)
 
 
 	def get_center(self):
@@ -235,7 +242,9 @@ if __name__ == "__main__":
 			fp.get_threshold_hsv()
 			fp.erode_and_dilate()
 			fp.get_hand_contour(fp.median)
+			print(fp.hand_contour)
 			fp.get_hulls()
+			fp.get_defects()
 			cv2.drawContours(fp.frame, fp.hand_contour, -1, (0, 255, 0), 3)
 			cv2.imshow('ead', fp.median)
 			cv2.imshow('fr', fp.frame)
