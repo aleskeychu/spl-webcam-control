@@ -9,16 +9,15 @@ from functools import reduce
 from collections import deque, namedtuple
 
 pag.FAILSAFE = False
-MIN_CONVEX_HULL_LENGTH = 100
-MAX_ANGLE = 90
+MAX_ANGLE = 80
 SAMPLES = 5
 HLS = namedtuple("HLS", "h, l, s")
-bounds = HLS(10, 30, 60)
+bounds = HLS(10, 20, 40)
 Point = namedtuple("Point", "x, y")
 
 class ROI:
 
-	def __init__(self, x=0, y=0, height=10, width=10, thickness=2, color=(0, 255, 0)):
+	def __init__(self, x=0, y=0, height=12, width=12, thickness=2, color=(0, 255, 0)):
 		self.x = x
 		self.y = y
 		self.width = width
@@ -43,7 +42,7 @@ class FrameProcessor:
 		self.hand_centers = deque(maxlen=15) # collectionq for storing last 100 hand positions, tuples of format (x, y)
 		self.fingers = deque(maxlen=10) # collection for storing very approximate number of fingers
 		self.recent_click = False # trace whether clicks were made recently	
-		self._positions = ((0.3, 0.4), (0.4, 0.35), (0.4, 0.45), (0.5, 0.35), (0.5, 0.45), (0.6, 0.30), (0.6, 0.4), (0.6, 0.50)) # positions to draw boxes at
+		self._positions = ((0.4, 0.5), (0.2, 0.6), (0.35, 0.65), (0.35, 0.55), (0.4, 0.65), (0.4, 0.55), (0.5, 0.65), (0.5, 0.6), (0.5, 0.55), (0.37, 0.6), (0.26, 0.6)) # positions to draw boxes at
 		self.rois = None
 		self.samples = [] # color samples from each roi
 		
@@ -67,7 +66,7 @@ class FrameProcessor:
 				colors = []
 				for roi in self.rois:
 					h, l, s = [[] for i in range(3)]
-					subroi = hls[roi.x+roi.thickness : roi.x+roi.width-roi.thickness, roi.y+roi.thickness : roi.y+roi.height-roi.thickness] # area inside box
+					subroi = hls[roi.y+roi.thickness : roi.y+roi.height-roi.thickness, roi.x+roi.thickness : roi.x+roi.width-roi.thickness] # area inside box
 					for row in subroi:
 						for pixel in row:
 							h.append(pixel[0])
@@ -80,14 +79,6 @@ class FrameProcessor:
 					self.samples.append(HLS(h[length // 2], l[length // 2], s[length // 2])) # array of tuples of median values
 				break	
 				
-	# Deprecated.
-	# def calc_median(self, colors):
-	# 	length = len(colors)
-	# 	h = sum(el[0] for el in colors) // length
-	# 	s = sum(el[1] for el in colors) // length
-	# 	v = sum(el[2] for el in colors) // length
-	# 	return (h, s, v)
-
 
 	def get_bounds(self):
 		Bound = namedtuple("Bound", "bot top")
@@ -105,22 +96,17 @@ class FrameProcessor:
 		hls = cv2.cvtColor(self.frame, cv2.COLOR_BGR2HLS)
 		thresholded_frames = []
 		for bound in self.bounds:
-			print("bound = {}".format(bound))
-			fr = cv2.inRange(hls, bound[0], bound[1])
+			fr = cv2.inRange(hls.copy(), bound[0], bound[1])
 			thresholded_frames.append(fr)
 		self.thr = reduce(np.bitwise_or, thresholded_frames)
-		self.threshold_from_hls = cv2.medianBlur(self.thr, 9)
+		self.threshold_from_hls = cv2.medianBlur(self.thr, 7)
 
 
 	def erode_and_dilate(self):
-		mask2 = self.threshold_from_hls
-		# kernel_ellipse = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (8, 8))
-		# dilation = cv2.dilate(mask2, kernel_ellipse)
-		# self.median = cv2.erode(dilation, kernel_ellipse)    
-
-		kernel_square = np.ones((11,11),np.uint8)
+		mask = self.threshold_from_hls
+		kernel_square = np.ones((9, 9),np.uint8)
 		kernel_ellipse= cv2.getStructuringElement(cv2.MORPH_ELLIPSE,(5,5))
-		dilation = cv2.dilate(mask2,kernel_ellipse)
+		dilation = cv2.dilate(mask,kernel_ellipse)
 		erosion = cv2.erode(dilation,kernel_square)    
 		dilation2 = cv2.dilate(erosion,kernel_ellipse)    
 		filtered = cv2.medianBlur(dilation2,5)
@@ -170,19 +156,25 @@ class FrameProcessor:
 
 	def get_defects(self):
 		defects = cv2.convexityDefects(self.hand_contour, self.hull_contour) 
+		self.all_defects = defects
+		x, y, w, h = cv2.boundingRect(self.hand_contour)
+		min_convex_hull_length = 0.03 * (w + h)
+
 		self.defects = []
 		for defect in defects:
 			start, end, farthest_index, distance = defect[0]
 			distance = distance / 256 # distance contains 8 fractional bits, gotta get rid of them
-			if distance < MIN_CONVEX_HULL_LENGTH:
+			print("{} = {}".format(min_convex_hull_length, distance))
+			if distance < min_convex_hull_length:
+				print("missed bc ditance")
 				continue
 			a = Point(self.hand_contour[start][0][0], self.hand_contour[start][0][1])
 			b = Point(self.hand_contour[farthest_index][0][0], self.hand_contour[farthest_index][0][1])
 			c = Point(self.hand_contour[end][0][0], self.hand_contour[end][0][1])
 			if FrameProcessor.angle(a, b, c) > MAX_ANGLE:
+				print("missed bc angle")
 				continue
 			self.defects.append(defect)
-		self.number_of_fingers = len(self.defects)
 
 
 	def get_center(self):
@@ -190,6 +182,11 @@ class FrameProcessor:
 		mom_x = int(moments['m10'] / moments['m00'])
 		mom_y = int(moments['m01'] / moments['m00'])
 		self.hand_centers.append((mom_x, mom_y))
+
+
+	def get_palm(self):
+		cont = self.hand_contour.copy()
+		defects = self.defects.copy()
 
 
 	def move(self):
@@ -241,10 +238,17 @@ if __name__ == "__main__":
 			fp.get_next_frame()
 			fp.get_threshold_hsv()
 			fp.erode_and_dilate()
-			fp.get_hand_contour(fp.median)
-			print(fp.hand_contour)
+			fp.get_hand_contour(fp.median.copy())
 			fp.get_hulls()
 			fp.get_defects()
+			print(fp.contours)
+			print(fp.defects)
+			# sys.exit(0)
+			print(fp.hand_contour)
+			for defect in fp.all_defects:
+				cv2.circle(fp.frame, tuple(fp.hand_contour[defect[0][0]][0]), 5, (255, 0, 0), 4)
+				cv2.circle(fp.frame, tuple(fp.hand_contour[defect[0][1]][0]), 5, (255, 0, 0), 4)
+				cv2.circle(fp.frame, tuple(fp.hand_contour[defect[0][2]][0]), 5, (255, 0, 255), 4)
 			cv2.drawContours(fp.frame, fp.hand_contour, -1, (0, 255, 0), 3)
 			cv2.imshow('ead', fp.median)
 			cv2.imshow('fr', fp.frame)
@@ -257,4 +261,4 @@ if __name__ == "__main__":
 			cv2.imshow('threshold', fp.threshold)
 		if cv2.waitKey(1) & 0xFF == ord('q'):
 			break
-	cv2.destroyAllWindows()
+	cv2.destroyAllWindows()	
